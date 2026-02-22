@@ -5,9 +5,12 @@ Build "clean" starting coordinate files for human mitochondrial Complex I from R
 Outputs (by default):
   - complexI_9TI4_WT_heavy.pdb
   - complexI_9TI4_ND1_A52T_heavy.pdb
+  - complexI_9TI4_ND4_R340H_heavy.pdb
   - complexI_9TI4_ND6_M64V_heavy.pdb
   - nd1_chain_s_WT_heavy.pdb
   - nd1_chain_s_A52T_heavy.pdb
+  - nd4_chain_r_WT_heavy.pdb
+  - nd4_chain_r_R340H_heavy.pdb
   - nd6_chain_m_WT_heavy.pdb
   - nd6_chain_m_M64V_heavy.pdb
 
@@ -21,6 +24,8 @@ Notes
   (or rebuilding the residue with psfgen + guesscoord) is recommended.
 * The LHON variant m.3460G>A in MT-ND1 maps to p.Ala52Thr (A52T). In 9TI4 this is:
     auth_asym_id (chain) = "s", auth_seq_id (residue) = 52, ALA -> THR
+* The LHON variant m.11778G>A in MT-ND4 maps to p.Arg340His (R340H). In 9TI4 this is:
+    auth_asym_id (chain) = "r", auth_seq_id (residue) = 340, ARG -> HIS
 """
 
 from __future__ import annotations
@@ -678,6 +683,183 @@ def mutate_nd1_a52t(
     return mutated_records
 
 
+def mutate_nd4_r340h(
+    records: List[AtomRecord],
+    *,
+    chain_auth: str = "r",
+    resseq: int = 340,
+    icode: str = "",
+) -> List[AtomRecord]:
+    """
+    Apply ARG->HIS at (chain_auth, resseq, icode) using heavy atoms only.
+
+    Builds an approximate imidazole ring based on the local CB/CG and existing ARG sidechain direction.
+    Downstream minimization (or rebuilding the residue with psfgen + guesscoord) is recommended.
+    """
+    target = [r for r in records if r.chain_auth == chain_auth and r.resseq == resseq and r.icode == icode]
+    if not target:
+        raise RuntimeError(f"Could not find target residue {chain_auth}:{resseq}{icode} in records")
+
+    atom_by_name = {r.atomname.strip().upper(): r for r in target}
+    if "CB" not in atom_by_name or "CG" not in atom_by_name:
+        mutated: List[AtomRecord] = []
+        for r in records:
+            if r.chain_auth != chain_auth or r.resseq != resseq or r.icode != icode:
+                mutated.append(r)
+                continue
+            # Minimal rename; psfgen can rebuild missing atoms later.
+            keep = r.atomname.strip().upper() in {"N", "CA", "C", "O", "CB", "CG"}
+            if keep:
+                mutated.append(AtomRecord(**{**r.__dict__, "resname": "HIS"}))
+        return mutated
+
+    cb = atom_by_name["CB"]
+    cg = atom_by_name["CG"]
+    cb_xyz = (cb.x, cb.y, cb.z)
+    cg_xyz = (cg.x, cg.y, cg.z)
+
+    axis_z = _vec_unit(_vec_sub(cb_xyz, cg_xyz))  # CG -> CB
+
+    # Use CG->CD direction when available to orient the ring; otherwise fall back to CG->CA.
+    if "CD" in atom_by_name:
+        ref = _vec_sub((atom_by_name["CD"].x, atom_by_name["CD"].y, atom_by_name["CD"].z), cg_xyz)
+    elif "CA" in atom_by_name:
+        ca = atom_by_name["CA"]
+        ref = _vec_sub((ca.x, ca.y, ca.z), cg_xyz)
+    else:
+        ref = (1.0, 0.0, 0.0) if abs(axis_z[0]) < 0.9 else (0.0, 1.0, 0.0)
+
+    # Project ref into the plane perpendicular to axis_z.
+    ref_perp = _vec_sub(ref, _vec_scale(axis_z, _vec_dot(ref, axis_z)))
+    if _vec_norm(ref_perp) < 1e-6:
+        ref = (0.0, 1.0, 0.0) if abs(axis_z[1]) < 0.9 else (0.0, 0.0, 1.0)
+        ref_perp = _vec_sub(ref, _vec_scale(axis_z, _vec_dot(ref, axis_z)))
+    axis_x = _vec_unit(ref_perp)
+    axis_y = _vec_cross(axis_z, axis_x)
+
+    # Regular pentagon approximation for the imidazole ring (edge ~1.37 Å).
+    # Radius r = edge / (2*sin(pi/5)).
+    edge = 1.37
+    r = edge / (2.0 * math.sin(math.pi / 5.0))
+    center = _vec_add(cg_xyz, _vec_scale(axis_x, r))
+
+    def _pos(angle_deg: float) -> Tuple[float, float, float]:
+        a = math.radians(angle_deg)
+        return _vec_add(
+            center,
+            _vec_add(
+                _vec_scale(axis_x, r * math.cos(a)),
+                _vec_scale(axis_y, r * math.sin(a)),
+            ),
+        )
+
+    # Place CG at 180°, then walk around the ring.
+    pos_nd1 = _pos(252.0)
+    pos_ce1 = _pos(324.0)
+    pos_ne2 = _pos(36.0)
+    pos_cd2 = _pos(108.0)
+
+    next_id = max(r.atom_id for r in records) + 1
+
+    nd1 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id,
+        element="N",
+        resname="HIS",
+        chain_auth=cg.chain_auth,
+        chain_pdb=cg.chain_pdb,
+        segid=cg.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="ND1",
+        x=pos_nd1[0],
+        y=pos_nd1[1],
+        z=pos_nd1[2],
+        occupancy=cg.occupancy,
+        bfactor=cg.bfactor,
+    )
+    cd2 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id + 1,
+        element="C",
+        resname="HIS",
+        chain_auth=cg.chain_auth,
+        chain_pdb=cg.chain_pdb,
+        segid=cg.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="CD2",
+        x=pos_cd2[0],
+        y=pos_cd2[1],
+        z=pos_cd2[2],
+        occupancy=cg.occupancy,
+        bfactor=cg.bfactor,
+    )
+    ce1 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id + 2,
+        element="C",
+        resname="HIS",
+        chain_auth=cg.chain_auth,
+        chain_pdb=cg.chain_pdb,
+        segid=cg.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="CE1",
+        x=pos_ce1[0],
+        y=pos_ce1[1],
+        z=pos_ce1[2],
+        occupancy=cg.occupancy,
+        bfactor=cg.bfactor,
+    )
+    ne2 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id + 3,
+        element="N",
+        resname="HIS",
+        chain_auth=cg.chain_auth,
+        chain_pdb=cg.chain_pdb,
+        segid=cg.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="NE2",
+        x=pos_ne2[0],
+        y=pos_ne2[1],
+        z=pos_ne2[2],
+        occupancy=cg.occupancy,
+        bfactor=cg.bfactor,
+    )
+
+    mutated_records: List[AtomRecord] = []
+    inserted = False
+    for r in records:
+        if r.chain_auth != chain_auth or r.resseq != resseq or r.icode != icode:
+            mutated_records.append(r)
+            continue
+
+        atom = r.atomname.strip().upper()
+        if atom in {"N", "CA", "C", "O", "CB", "CG"}:
+            mutated_records.append(AtomRecord(**{**r.__dict__, "resname": "HIS"}))
+            if not inserted and atom == "CG":
+                # Insert new HIS ring atoms after CG.
+                mutated_records.append(nd1)
+                mutated_records.append(cd2)
+                mutated_records.append(ce1)
+                mutated_records.append(ne2)
+                inserted = True
+        else:
+            # Drop ARG-specific sidechain atoms (CD/NE/CZ/NH1/NH2).
+            continue
+
+    if not inserted:
+        mutated_records.append(nd1)
+        mutated_records.append(cd2)
+        mutated_records.append(ce1)
+        mutated_records.append(ne2)
+
+    return mutated_records
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -769,6 +951,47 @@ def main(argv: Optional[List[str]] = None) -> int:
         ],
     )
 
+    wt_nd4 = outdir / "nd4_chain_r_WT_heavy.pdb"
+    write_pdb_with_remarks(
+        wt_nd4,
+        [r for r in records if r.chain_auth == "r"],
+        remarks=common_remarks,
+    )
+
+    nd4_records = mutate_nd4_r340h(records, chain_auth="r", resseq=340, icode="")
+    nd4_full = outdir / "complexI_9TI4_ND4_R340H_heavy.pdb"
+    write_pdb_with_remarks(
+        nd4_full,
+        nd4_records,
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND4 chain r resid 340 ARG->HIS.",
+            "Variant: m.11778G>A (p.Arg340His).",
+        ],
+    )
+
+    nd4_protein_only = outdir / "complexI_9TI4_ND4_R340H_heavy_proteinOnly.pdb"
+    write_pdb_with_remarks(
+        nd4_protein_only,
+        [r for r in nd4_records if r.group == "ATOM"],
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND4 chain r resid 340 ARG->HIS.",
+            "Variant: m.11778G>A (p.Arg340His).",
+        ],
+    )
+
+    nd4_chain = outdir / "nd4_chain_r_R340H_heavy.pdb"
+    write_pdb_with_remarks(
+        nd4_chain,
+        [r for r in nd4_records if r.chain_auth == "r"],
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND4 chain r resid 340 ARG->HIS.",
+            "Variant: m.11778G>A (p.Arg340His).",
+        ],
+    )
+
     mut_records = mutate_nd6_m64v(records, chain_auth="m", resseq=64, icode="")
     mut_full = outdir / "complexI_9TI4_ND6_M64V_heavy.pdb"
     write_pdb_with_remarks(
@@ -809,6 +1032,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Wrote: {nd1_full}")
     print(f"Wrote: {nd1_protein_only}")
     print(f"Wrote: {nd1_chain}")
+    print(f"Wrote: {wt_nd4}")
+    print(f"Wrote: {nd4_full}")
+    print(f"Wrote: {nd4_protein_only}")
+    print(f"Wrote: {nd4_chain}")
     print(f"Wrote: {wt_nd6}")
     print(f"Wrote: {mut_full}")
     print(f"Wrote: {mut_protein_only}")
