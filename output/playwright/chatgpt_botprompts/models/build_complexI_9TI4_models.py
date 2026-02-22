@@ -4,7 +4,10 @@ Build "clean" starting coordinate files for human mitochondrial Complex I from R
 
 Outputs (by default):
   - complexI_9TI4_WT_heavy.pdb
+  - complexI_9TI4_ND1_A52T_heavy.pdb
   - complexI_9TI4_ND6_M64V_heavy.pdb
+  - nd1_chain_s_WT_heavy.pdb
+  - nd1_chain_s_A52T_heavy.pdb
   - nd6_chain_m_WT_heavy.pdb
   - nd6_chain_m_M64V_heavy.pdb
 
@@ -16,6 +19,8 @@ Notes
     auth_asym_id (chain) = "m", auth_seq_id (residue) = 64, MET -> VAL
 * Side-chain coordinates are approximate for the new VAL CG2; downstream minimization
   (or rebuilding the residue with psfgen + guesscoord) is recommended.
+* The LHON variant m.3460G>A in MT-ND1 maps to p.Ala52Thr (A52T). In 9TI4 this is:
+    auth_asym_id (chain) = "s", auth_seq_id (residue) = 52, ALA -> THR
 """
 
 from __future__ import annotations
@@ -548,6 +553,131 @@ def mutate_nd6_m64v(
     return mutated_records
 
 
+def mutate_nd1_a52t(
+    records: List[AtomRecord],
+    *,
+    chain_auth: str = "s",
+    resseq: int = 52,
+    icode: str = "",
+) -> List[AtomRecord]:
+    """
+    Apply ALA->THR at (chain_auth, resseq, icode) using heavy atoms only.
+
+    Adds OG1 and CG2 atoms with approximate tetrahedral geometry around CB.
+    Downstream minimization (or rebuilding the residue with psfgen + guesscoord) is recommended.
+    """
+    target = [r for r in records if r.chain_auth == chain_auth and r.resseq == resseq and r.icode == icode]
+    if not target:
+        raise RuntimeError(f"Could not find target residue {chain_auth}:{resseq}{icode} in records")
+
+    atom_by_name = {r.atomname.strip().upper(): r for r in target}
+    if "CA" not in atom_by_name or "CB" not in atom_by_name:
+        mutated: List[AtomRecord] = []
+        for r in records:
+            if r.chain_auth != chain_auth or r.resseq != resseq or r.icode != icode:
+                mutated.append(r)
+                continue
+            mutated.append(AtomRecord(**{**r.__dict__, "resname": "THR"}))
+        return mutated
+
+    ca = atom_by_name["CA"]
+    cb = atom_by_name["CB"]
+    ca_xyz = (ca.x, ca.y, ca.z)
+    cb_xyz = (cb.x, cb.y, cb.z)
+
+    axis = _vec_sub(ca_xyz, cb_xyz)  # CB -> CA
+    axis_unit = _vec_unit(axis)
+
+    # Choose a reference direction not parallel to the CB->CA axis.
+    ref: Optional[Tuple[float, float, float]] = None
+    for cand in ("N", "C", "O"):
+        if cand in atom_by_name:
+            a = atom_by_name[cand]
+            ref = _vec_sub((a.x, a.y, a.z), ca_xyz)  # CA -> cand
+            break
+    if ref is None:
+        ref = (1.0, 0.0, 0.0) if abs(axis_unit[0]) < 0.9 else (0.0, 1.0, 0.0)
+
+    perp = _vec_cross(axis_unit, ref)
+    if _vec_norm(perp) < 1e-6:
+        ref = (0.0, 1.0, 0.0) if abs(axis_unit[1]) < 0.9 else (0.0, 0.0, 1.0)
+        perp = _vec_cross(axis_unit, ref)
+    perp1 = _vec_unit(perp)
+    perp2 = _rodrigues_rotate(perp1, axis_unit, angle_rad=2.0 * math.pi / 3.0)
+
+    # Tetrahedral directions: cos(109.47) = -1/3.
+    along = -1.0 / 3.0
+    perp_scale = 2.0 * math.sqrt(2.0) / 3.0
+
+    dir_og1 = _vec_add(_vec_scale(axis_unit, along), _vec_scale(perp1, perp_scale))
+    dir_cg2 = _vec_add(_vec_scale(axis_unit, along), _vec_scale(perp2, perp_scale))
+
+    # Approx bond lengths (heavy atoms).
+    cb_og = 1.43  # C-O
+    cb_cg = 1.53  # C-C
+
+    og1_xyz = _vec_add(cb_xyz, _vec_scale(dir_og1, cb_og))
+    cg2_xyz = _vec_add(cb_xyz, _vec_scale(dir_cg2, cb_cg))
+
+    next_id = max(r.atom_id for r in records) + 1
+    og1 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id,
+        element="O",
+        resname="THR",
+        chain_auth=cb.chain_auth,
+        chain_pdb=cb.chain_pdb,
+        segid=cb.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="OG1",
+        x=og1_xyz[0],
+        y=og1_xyz[1],
+        z=og1_xyz[2],
+        occupancy=cb.occupancy,
+        bfactor=cb.bfactor,
+    )
+
+    cg2 = AtomRecord(
+        group="ATOM",
+        atom_id=next_id + 1,
+        element="C",
+        resname="THR",
+        chain_auth=cb.chain_auth,
+        chain_pdb=cb.chain_pdb,
+        segid=cb.segid,
+        resseq=resseq,
+        icode=icode,
+        atomname="CG2",
+        x=cg2_xyz[0],
+        y=cg2_xyz[1],
+        z=cg2_xyz[2],
+        occupancy=cb.occupancy,
+        bfactor=cb.bfactor,
+    )
+
+    mutated_records: List[AtomRecord] = []
+    inserted = False
+    for r in records:
+        if r.chain_auth != chain_auth or r.resseq != resseq or r.icode != icode:
+            mutated_records.append(r)
+            continue
+
+        atom = r.atomname.strip().upper()
+        mutated_records.append(AtomRecord(**{**r.__dict__, "resname": "THR"}))
+
+        if not inserted and atom == "CB":
+            mutated_records.append(og1)
+            mutated_records.append(cg2)
+            inserted = True
+
+    if not inserted:
+        mutated_records.append(og1)
+        mutated_records.append(cg2)
+
+    return mutated_records
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -598,6 +728,47 @@ def main(argv: Optional[List[str]] = None) -> int:
         remarks=common_remarks,
     )
 
+    wt_nd1 = outdir / "nd1_chain_s_WT_heavy.pdb"
+    write_pdb_with_remarks(
+        wt_nd1,
+        [r for r in records if r.chain_auth == "s"],
+        remarks=common_remarks,
+    )
+
+    nd1_records = mutate_nd1_a52t(records, chain_auth="s", resseq=52, icode="")
+    nd1_full = outdir / "complexI_9TI4_ND1_A52T_heavy.pdb"
+    write_pdb_with_remarks(
+        nd1_full,
+        nd1_records,
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND1 chain s resid 52 ALA->THR.",
+            "Variant: m.3460G>A (p.Ala52Thr).",
+        ],
+    )
+
+    nd1_protein_only = outdir / "complexI_9TI4_ND1_A52T_heavy_proteinOnly.pdb"
+    write_pdb_with_remarks(
+        nd1_protein_only,
+        [r for r in nd1_records if r.group == "ATOM"],
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND1 chain s resid 52 ALA->THR.",
+            "Variant: m.3460G>A (p.Ala52Thr).",
+        ],
+    )
+
+    nd1_chain = outdir / "nd1_chain_s_A52T_heavy.pdb"
+    write_pdb_with_remarks(
+        nd1_chain,
+        [r for r in nd1_records if r.chain_auth == "s"],
+        remarks=common_remarks
+        + [
+            "Mutation applied: MT-ND1 chain s resid 52 ALA->THR.",
+            "Variant: m.3460G>A (p.Ala52Thr).",
+        ],
+    )
+
     mut_records = mutate_nd6_m64v(records, chain_auth="m", resseq=64, icode="")
     mut_full = outdir / "complexI_9TI4_ND6_M64V_heavy.pdb"
     write_pdb_with_remarks(
@@ -634,6 +805,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"Wrote: {wt_full}")
     print(f"Wrote: {wt_protein_only}")
+    print(f"Wrote: {wt_nd1}")
+    print(f"Wrote: {nd1_full}")
+    print(f"Wrote: {nd1_protein_only}")
+    print(f"Wrote: {nd1_chain}")
     print(f"Wrote: {wt_nd6}")
     print(f"Wrote: {mut_full}")
     print(f"Wrote: {mut_protein_only}")

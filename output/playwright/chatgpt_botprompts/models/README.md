@@ -7,9 +7,13 @@ This folder contains "clean" (heavy-atoms-only) coordinate files exported from R
 ## Files
 
 - `complexI_9TI4_WT_heavy.pdb`: full Complex I, heavy atoms only (HOH removed)
+- `complexI_9TI4_ND1_A52T_heavy.pdb`: same, but **MT-ND1 ALA52->THR** applied
 - `complexI_9TI4_ND6_M64V_heavy.pdb`: same, but **MT-ND6 MET64→VAL** applied
 - `complexI_9TI4_WT_heavy_proteinOnly.pdb`: protein-only (ATOM records), heavy atoms only
+- `complexI_9TI4_ND1_A52T_heavy_proteinOnly.pdb`: protein-only (ATOM records), heavy atoms only, mutated
 - `complexI_9TI4_ND6_M64V_heavy_proteinOnly.pdb`: protein-only (ATOM records), heavy atoms only, mutated
+- `nd1_chain_s_WT_heavy.pdb`: ND1 only (chain `s`)
+- `nd1_chain_s_A52T_heavy.pdb`: ND1 only (chain `s`), mutated
 - `nd6_chain_m_WT_heavy.pdb`: ND6 only (chain `m`)
 - `nd6_chain_m_M64V_heavy.pdb`: ND6 only (chain `m`), mutated
 - `complexI_9TI4_chain_map.json`: author chain IDs → PDB chain IDs (identity for 9TI4)
@@ -19,6 +23,10 @@ This folder contains "clean" (heavy-atoms-only) coordinate files exported from R
 LHON mtDNA variant **m.14484T>C** in **MT-ND6** maps to protein change **p.Met64Val (M64V)**.
 
 In **9TI4**, ND6 corresponds to **chain `m`**, and the mutated residue is **resid 64**.
+
+LHON mtDNA variant **m.3460G>A** in **MT-ND1** maps to protein change **p.Ala52Thr (A52T)**.
+
+In **9TI4**, ND1 corresponds to **chain `s`**, and the mutated residue is **resid 52**.
 
 ## Regenerating these outputs
 
@@ -41,6 +49,15 @@ vmd -dispdev text -e vmd_psfgen_mutate_nd6_M64V.tcl
 
 This will write `nd6_chain_m_M64V.psf` and `nd6_chain_m_M64V_rebuilt.pdb`.
 
+For ND1-only, run (from this folder) in VMD:
+
+```bash
+export CHARMM_TOP=/path/to/top_all36_prot.rtf
+vmd -dispdev text -e vmd_psfgen_mutate_nd1_A52T.tcl
+```
+
+This will write `nd1_chain_s_A52T.psf` and `nd1_chain_s_A52T_rebuilt.pdb`.
+
 ## VMD visualization
 
 From this folder:
@@ -49,6 +66,8 @@ From this folder:
 vmd -e vmd_view_complexI_9TI4_WT.tcl
 vmd -e vmd_view_complexI_9TI4_ND6_M64V.tcl
 vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V.tcl
+vmd -e vmd_view_complexI_9TI4_ND1_A52T.tcl
+vmd -e vmd_compare_complexI_9TI4_WT_vs_ND1_A52T.tcl
 vmd -e vmd_view_complexI_9TI4_features.tcl
 vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V_features.tcl
 ```
