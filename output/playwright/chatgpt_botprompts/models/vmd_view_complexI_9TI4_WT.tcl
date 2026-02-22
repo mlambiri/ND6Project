@@ -120,7 +120,7 @@ proc main {} {
   ci_add_rep_register "arm_peripheral" $molid {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent
 
   # Lipids + cofactors + FeS (only present in full heavy models).
-  ci_add_rep_register "lipids" $molid {Bonds 0.20 12.0} "resname CDL PEE PLX" {Resname} Opaque
+  ci_add_rep_register "lipids" $molid {Bonds 0.20 12.0} "resname CDL PEE PLX DGT" {Resname} Opaque
   ci_add_rep_register "cofactors" $molid {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque
   ci_add_rep_register "fes" $molid {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque
 
@@ -133,4 +133,3 @@ proc main {} {
 }
 
 main
-

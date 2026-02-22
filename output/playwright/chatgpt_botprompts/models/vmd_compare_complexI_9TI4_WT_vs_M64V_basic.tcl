@@ -192,7 +192,7 @@ proc main {} {
   foreach pair [list [list wt $wt] [list mut $mut]] {
     lassign $pair tag molid
 
-    set rep_lipids [ci_add_rep $molid {Bonds 0.20 12.0} "resname CDL PEE PLX" {Resname} Opaque]
+    set rep_lipids [ci_add_rep $molid {Bonds 0.20 12.0} "resname CDL PEE PLX DGT" {Resname} Opaque]
     ci_register_rep "lipids" $molid $rep_lipids
     ci_register_rep $tag $molid $rep_lipids
 

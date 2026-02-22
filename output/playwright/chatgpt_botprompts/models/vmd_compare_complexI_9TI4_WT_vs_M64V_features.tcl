@@ -412,7 +412,7 @@ proc main {} {
 
   # --- Lipid membrane (native lipids present in model) ---
   mol representation Bonds 0.20 12.0
-  mol selection "resname CDL PEE PLX"
+  mol selection "resname CDL PEE PLX DGT"
   mol color Resname
   mol material Opaque
   mol addrep $mut

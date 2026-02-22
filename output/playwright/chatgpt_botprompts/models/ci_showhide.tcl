@@ -131,9 +131,9 @@ proc _ci_sh_has_any_atoms {molid seltext} {
 
 proc ci_make_arm_selections {molid membrane_dist} {
   set ndchains "(chain s i j r l m)"
-  if {[_ci_sh_has_any_atoms $molid "resname CDL PEE PLX"]} {
-    set sel_mem "protein and within $membrane_dist of (resname CDL PEE PLX)"
-    set sel_per "protein and not (within $membrane_dist of (resname CDL PEE PLX))"
+  if {[_ci_sh_has_any_atoms $molid "resname CDL PEE PLX DGT"]} {
+    set sel_mem "protein and within $membrane_dist of (resname CDL PEE PLX DGT)"
+    set sel_per "protein and not (within $membrane_dist of (resname CDL PEE PLX DGT))"
   } else {
     # Fallback for protein-only models: approximate membrane-arm neighborhood by proximity to ND chains.
     set fallback_dist 10.0

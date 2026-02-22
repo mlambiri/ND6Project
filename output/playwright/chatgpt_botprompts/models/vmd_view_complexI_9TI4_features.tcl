@@ -45,7 +45,7 @@ proc _label_at_atom {molid seltext label colorname} {
 proc _pick_membrane_normal_axis {molid} {
   # Heuristic: pick the axis with smallest extent for lipids' P atoms (bilayer thickness).
   # Fallback: ND1..ND6 CA atoms.
-  set sel [atomselect $molid "resname CDL PEE PLX and (name P or element P)"]
+  set sel [atomselect $molid "resname CDL PEE PLX DGT and (name P or element P)"]
   if {[$sel num] < 1} {
     $sel delete
     set sel [atomselect $molid "protein and (chain s i j r l m) and name CA"]
@@ -292,7 +292,7 @@ proc main {} {
 
   # Lipids (if present).
   mol representation Bonds 0.20 12.0
-  mol selection "resname CDL PEE PLX"
+  mol selection "resname CDL PEE PLX DGT"
   mol color Resname
   mol material Opaque
   mol addrep $molid
