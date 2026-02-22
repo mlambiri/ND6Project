@@ -1,6 +1,6 @@
 # Complex I (human) + ND6 M64V starter models
 
-Exported from RCSB PDB: https://www.rcsb.org/structure/9TI4
+Exported from [RCSB PDB 9TI4](https://www.rcsb.org/structure/9TI4)
 
 This folder contains "clean" (heavy-atoms-only) coordinate files exported from RCSB **PDB 9TI4** (human mitochondrial Complex I; cryo-EM) and a simple ND6 mutation helper.
 

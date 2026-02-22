@@ -2,6 +2,7 @@
 #
 # This file defines interactive Tk Console commands:
 #   ci_list
+#   ci_help
 #   ci_show <group>
 #   ci_hide <group>
 #   ci_focus_nd ND6
@@ -149,6 +150,39 @@ proc ci_list {} {
   foreach k [lsort [array names ::ci_reps]] {
     puts "  $k -> $::ci_reps($k)"
   }
+}
+
+proc ci_help {} {
+  puts {ci_showhide.tcl - interactive commands (VMD Tk Console)
+
+ci_list
+
+# ND subunits
+ci_focus_nd ND6      ;# show only ND6
+ci_show ND4
+ci_show nd           ;# show all ND1..ND6
+ci_hide nd
+
+# Membrane / arm
+ci_show lipids
+ci_hide lipids
+ci_show arm_membrane
+ci_show arm_peripheral
+ci_hide arm
+
+# Cofactors / Fe-S
+ci_show cofactors
+ci_hide cofactors
+ci_show fes
+ci_hide fes
+
+# Generic show/hide (any registered group; see ci_list)
+ci_show <group>
+ci_hide <group>
+ci_show all
+ci_hide all
+
+Tip: some scripts register extra groups (e.g., wt/mut). Run ci_list to see what's available.}
 }
 
 proc _ci_sh_set_group {name visible} {
