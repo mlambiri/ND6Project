@@ -1,13 +1,28 @@
-# VMD visualization: compare 9TI4 WT vs ND6 M64V (LHON m.14484T>C) (basic style)
+# VMD visualization: compare 9TI4 WT vs ND6 M64V (LHON m.14484T>C) (basic style + toggles)
 #
 # Goal: chain-colored lines with emphasized ND1..ND6 as thick tubes,
-# WITHOUT any labels/callouts and WITHOUT any big spheres.
+# WITHOUT any labels/callouts and WITHOUT any big spheres (except optional tiny FeS spheres).
 #
 # Usage (defaults):
 #   vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V_basic.tcl
 #
 # Usage (explicit files):
 #   vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V_basic.tcl -args WT.pdb M64V.pdb
+#
+# Usage (options; after -args):
+#   --nd ND6 --show context,nd
+#   --arm membrane --show context,nd,arm,lipids
+#   --show all
+#
+# Interactive toggles (VMD Tk Console):
+#   ci_list
+#   ci_show/ci_hide context|nd|arm|lipids|cofactors|fes
+#   ci_show wt / ci_hide wt
+#   ci_show mut / ci_hide mut
+
+set _ci_script_dir [file dirname [info script]]
+source [file join $_ci_script_dir "ci_showhide.tcl"]
+unset _ci_script_dir
 
 proc _ci_force_display_prefs_basic {} {
   display projection Orthographic
@@ -26,22 +41,32 @@ proc _ci_clear_all_reps {molid} {
   }
 }
 
-proc _ci_graphics_text {molid xyz text {size 1.4}} {
-  # Black text with a subtle white halo for readability on busy geometry.
-  graphics $molid color white
-  graphics $molid text $xyz $text size [expr {$size + 0.25}]
-  graphics $molid color black
-  graphics $molid text $xyz $text size $size
-}
-
 proc main {} {
   global argc argv
 
+  set cli_opts [ci_parse_cli $argc $argv]
+  if {[dict get $cli_opts help]} {
+    puts "Usage: vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V_basic.tcl -args WT.pdb M64V.pdb --nd ND6 --show nd,lipids"
+    return
+  }
+  set vis [ci_resolve_visibility $cli_opts]
+  set show_parts [dict get $vis show_parts]
+  set nd_list [dict get $vis nd_list]
+  set arm_mode [dict get $vis arm_mode]
+  set arm_include_nd [dict get $vis arm_include_nd]
+  set membrane_dist [dict get $vis membrane_dist]
+
   set script_dir [file dirname [info script]]
-  if {$argc >= 2} {
-    set wt_file  [lindex $argv 0]
-    set mut_file [lindex $argv 1]
-  } else {
+  set wt_file [dict get $cli_opts wt_file]
+  set mut_file [dict get $cli_opts mut_file]
+  set positionals [dict get $cli_opts positionals]
+  if {$wt_file eq "" && [llength $positionals] >= 1} {
+    set wt_file [lindex $positionals 0]
+  }
+  if {$mut_file eq "" && [llength $positionals] >= 2} {
+    set mut_file [lindex $positionals 1]
+  }
+  if {$wt_file eq "" || $mut_file eq ""} {
     set wt_file  [file join $script_dir "complexI_9TI4_WT_heavy.pdb"]
     set mut_file [file join $script_dir "complexI_9TI4_ND6_M64V_heavy.pdb"]
     if {![file exists $wt_file] || ![file exists $mut_file]} {
@@ -59,6 +84,7 @@ proc main {} {
   _ci_clear_all_reps $mut
 
   _ci_force_display_prefs_basic
+  ci_reset
 
   # Align mutant onto WT using CA atoms.
   set sel_wt_fit  [atomselect $wt  "name CA"]
@@ -101,81 +127,51 @@ proc main {} {
   catch {molinfo $mut set rotate_matrix $rot}
 
   # WT: protein as gray lines.
-  mol representation Lines
-  mol selection "protein"
-  mol color ColorID 8
-  mol material Opaque
-  mol addrep $wt
+  set rep_wt_context [ci_add_rep $wt {Lines} "protein" {ColorID 8} Opaque]
+  ci_register_rep "context" $wt $rep_wt_context
+  ci_register_rep "wt" $wt $rep_wt_context
 
   # Mutant: protein as chain-colored lines.
-  mol representation Lines
-  mol selection "protein"
-  mol color Chain
-  mol material Opaque
-  mol addrep $mut
+  set rep_mut_context [ci_add_rep $mut {Lines} "protein" {Chain} Opaque]
+  ci_register_rep "context" $mut $rep_mut_context
+  ci_register_rep "mut" $mut $rep_mut_context
 
-  # Emphasize ND1..ND6 on mutant as thick tubes (no labels).
-  set nd_defs {
-    {ND1 s 1}
-    {ND2 i 3}
-    {ND3 j 4}
-    {ND4 r 7}
-    {ND5 l 0}
-    {ND6 m 9}
-  }
-  foreach def $nd_defs {
+  # Mutant: ND1..ND6 as thick tubes.
+  foreach def [ci_nd_defs] {
     lassign $def name chainid colorid
-    mol representation Tube 0.60 12.0
-    mol selection "protein and chain $chainid"
-    mol color ColorID $colorid
-    mol material Opaque
-    mol addrep $mut
+    set key "nd_[string tolower $name]"
+    set rep [ci_add_rep $mut {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque]
+    ci_register_rep $key $mut $rep
+    ci_register_rep "mut" $mut $rep
   }
 
-  # Mutant: lipids + cofactors/clusters as bonds (small, no spheres).
-  mol representation Bonds 0.20 12.0
-  mol selection "resname CDL PEE PLX"
-  mol color Resname
-  mol material Opaque
-  mol addrep $mut
-
-  mol representation Bonds 0.25 12.0
-  mol selection "resname FMN NDP 8Q1 SF4 FES"
-  mol color Resname
-  mol material Opaque
-  mol addrep $mut
-
-  # Fe-S clusters as spheres (small selection; avoids the "big spheres" issue).
-  mol representation VDW 0.80 12.0
-  mol selection "resname SF4 FES"
-  mol color Resname
-  mol material Opaque
-  mol addrep $mut
-
-  # Mark ND6 location on mutant with a leader line + text (chain m).
-  set sel_nd6 [atomselect $mut "protein and chain m and name CA"]
-  if {[$sel_nd6 num] > 0} {
-    set c [measure center $sel_nd6]
-    $sel_nd6 delete
-
-    set sel_prot [atomselect $mut "protein and name CA"]
-    set mm [measure minmax $sel_prot]
-    $sel_prot delete
-    set pmin [lindex $mm 0]
-    set pmax [lindex $mm 1]
-    set zmin [lindex $pmin 2]
-    set zmax [lindex $pmax 2]
-    set zspan [expr {$zmax - $zmin}]
-    set zmargin [expr {0.06*$zspan + 12.0}]
-
-    set lpos [list [lindex $c 0] [lindex $c 1] [expr {$zmin - $zmargin}]]
-    graphics $mut color black
-    graphics $mut line $c $lpos width 2
-    _ci_graphics_text $mut $lpos "ND6" 1.6
-  } else {
-    $sel_nd6 delete
-    puts "NOTE: ND6 label skipped (chain m not found)."
+  # Arm representations (on mutant).
+  lassign [ci_make_arm_selections $mut $membrane_dist] sel_arm_mem sel_arm_per
+  if {!$arm_include_nd} {
+    set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
+    set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
   }
+  set rep_arm_mem [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent]
+  ci_register_rep "arm_membrane" $mut $rep_arm_mem
+  ci_register_rep "mut" $mut $rep_arm_mem
+  set rep_arm_per [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent]
+  ci_register_rep "arm_peripheral" $mut $rep_arm_per
+  ci_register_rep "mut" $mut $rep_arm_per
+
+  # Mutant: lipids + cofactors/clusters as bonds; Fe-S clusters as tiny spheres.
+  set rep_lipids [ci_add_rep $mut {Bonds 0.20 12.0} "resname CDL PEE PLX" {Resname} Opaque]
+  ci_register_rep "lipids" $mut $rep_lipids
+  ci_register_rep "mut" $mut $rep_lipids
+
+  set rep_cof [ci_add_rep $mut {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque]
+  ci_register_rep "cofactors" $mut $rep_cof
+  ci_register_rep "mut" $mut $rep_cof
+
+  set rep_fes [ci_add_rep $mut {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque]
+  ci_register_rep "fes" $mut $rep_fes
+  ci_register_rep "mut" $mut $rep_fes
+
+  ci_apply_visibility $show_parts $nd_list $arm_mode
 
   after idle _ci_force_display_prefs_basic
   after 200 _ci_force_display_prefs_basic
@@ -184,3 +180,4 @@ proc main {} {
 }
 
 main
+

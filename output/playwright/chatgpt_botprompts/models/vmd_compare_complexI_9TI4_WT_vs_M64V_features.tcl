@@ -27,6 +27,10 @@
 #
 # Note: labels for N1a..N6b are assigned based on subunit association and residue IDs in 9TI4.
 
+set _ci_script_dir [file dirname [info script]]
+source [file join $_ci_script_dir "ci_showhide.tcl"]
+unset _ci_script_dir
+
 proc _center_of_selection {molid seltext} {
   set sel [atomselect $molid $seltext]
   if {[$sel num] < 1} {
@@ -191,12 +195,30 @@ proc _ci_force_display_prefs {} {
 proc main {} {
   global argc argv
 
+  set cli_opts [ci_parse_cli $argc $argv]
+  if {[dict get $cli_opts help]} {
+    puts "Usage: vmd -e vmd_compare_complexI_9TI4_WT_vs_M64V_features.tcl -args WT.pdb M64V.pdb --show all"
+    return
+  }
+  set vis [ci_resolve_visibility $cli_opts]
+  set show_parts [dict get $vis show_parts]
+  set nd_list [dict get $vis nd_list]
+  set arm_mode [dict get $vis arm_mode]
+  set arm_include_nd [dict get $vis arm_include_nd]
+  set membrane_dist [dict get $vis membrane_dist]
+
   set script_dir [file dirname [info script]]
 
-  if {$argc >= 2} {
-    set wt_file  [lindex $argv 0]
-    set mut_file [lindex $argv 1]
-  } else {
+  set wt_file [dict get $cli_opts wt_file]
+  set mut_file [dict get $cli_opts mut_file]
+  set positionals [dict get $cli_opts positionals]
+  if {$wt_file eq "" && [llength $positionals] >= 1} {
+    set wt_file [lindex $positionals 0]
+  }
+  if {$mut_file eq "" && [llength $positionals] >= 2} {
+    set mut_file [lindex $positionals 1]
+  }
+  if {$wt_file eq "" || $mut_file eq ""} {
     set wt_file  [file join $script_dir "complexI_9TI4_WT_heavy.pdb"]
     set mut_file [file join $script_dir "complexI_9TI4_ND6_M64V_heavy.pdb"]
     if {![file exists $wt_file] || ![file exists $mut_file]} {
@@ -213,6 +235,7 @@ proc main {} {
   catch {graphics $mut delete all}
 
   _ci_force_display_prefs
+  ci_reset
 
   # Align mutant onto WT using CA atoms.
   set sel_wt_fit  [atomselect $wt  "name CA"]
@@ -274,6 +297,8 @@ proc main {} {
   mol color ColorID 8
   mol material Opaque
   mol addrep $wt
+  ci_register_rep "context" $wt [expr {[molinfo $wt get numreps] - 1}]
+  ci_register_rep "wt" $wt [expr {[molinfo $wt get numreps] - 1}]
 
   # MUT: protein chain-colored.
   mol representation NewCartoon
@@ -281,6 +306,8 @@ proc main {} {
   mol color Chain
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "context" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # --- ND1..ND6 marked on mutant ---
   # ND labels: below the complex (low Z)
@@ -346,6 +373,8 @@ proc main {} {
     mol color ColorID $colorid
     mol material Opaque
     mol addrep $mut
+    ci_register_rep "nd_[string tolower $name]" $mut [expr {[molinfo $mut get numreps] - 1}]
+    ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
     set c [_center_of_selection $mut "chain $chainid and name CA"]
     if {$c ne ""} {
@@ -365,6 +394,21 @@ proc main {} {
   mol color ColorID 4
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "nd_nd6" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
+
+  # Arm representations (membrane-near vs peripheral; toggle with --arm / ci_show arm).
+  lassign [ci_make_arm_selections $mut $membrane_dist] sel_arm_mem sel_arm_per
+  if {!$arm_include_nd} {
+    set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
+    set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
+  }
+  set rep_arm_mem [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent]
+  ci_register_rep "arm_membrane" $mut $rep_arm_mem
+  ci_register_rep "mut" $mut $rep_arm_mem
+  set rep_arm_per [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent]
+  ci_register_rep "arm_peripheral" $mut $rep_arm_per
+  ci_register_rep "mut" $mut $rep_arm_per
 
   # --- Lipid membrane (native lipids present in model) ---
   mol representation Bonds 0.20 12.0
@@ -372,6 +416,8 @@ proc main {} {
   mol color Resname
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "lipids" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # --- FMN and NADPH ---
   mol representation Bonds 0.25 12.0
@@ -379,12 +425,16 @@ proc main {} {
   mol color ColorID 6
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "cofactors" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   mol representation Bonds 0.25 12.0
   mol selection "resname NDP"
   mol color ColorID 2
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "cofactors" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # NADH isn't present in these coordinates; highlight the NADH binding region near FMN.
   mol representation Bonds 0.20 12.0
@@ -392,6 +442,8 @@ proc main {} {
   mol color ColorID 3
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "cofactors" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # --- Quinone binding cavity (approx: residues near quinone-like ligand 8Q1) ---
   mol representation Bonds 0.25 12.0
@@ -399,12 +451,16 @@ proc main {} {
   mol color ColorID 10
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "cofactors" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   mol representation Bonds 0.20 12.0
   mol selection "protein and within 5 of (resname 8Q1 and chain F)"
   mol color ColorID 10
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "cofactors" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # --- Feature callouts (ABOVE the complex) ---
   set feat_defs {
@@ -454,6 +510,8 @@ proc main {} {
   mol color Resname
   mol material Opaque
   mol addrep $mut
+  ci_register_rep "fes" $mut [expr {[molinfo $mut get numreps] - 1}]
+  ci_register_rep "mut" $mut [expr {[molinfo $mut get numreps] - 1}]
 
   # Label likely cluster identities by residue IDs in 9TI4.
   set cluster_labels {
@@ -470,6 +528,9 @@ proc main {} {
     lassign $item label seltext colorname
     _label_at_atom $mut $seltext $label $colorname
   }
+
+  # Apply initial visibility based on CLI toggles.
+  ci_apply_visibility $show_parts $nd_list $arm_mode
 
   # Re-apply after the UI initializes (helps if .vmdrc themes set black background / axes off).
   after idle _ci_force_display_prefs

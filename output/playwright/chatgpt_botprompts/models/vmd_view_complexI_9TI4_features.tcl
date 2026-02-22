@@ -6,6 +6,10 @@
 # Usage (explicit file):
 #   vmd -e vmd_view_complexI_9TI4_features.tcl -args /path/to/model.pdb
 
+set _ci_script_dir [file dirname [info script]]
+source [file join $_ci_script_dir "ci_showhide.tcl"]
+unset _ci_script_dir
+
 proc _center_of_selection {molid seltext} {
   set sel [atomselect $molid $seltext]
   if {[$sel num] < 1} {
@@ -130,11 +134,26 @@ proc _ci_force_display_prefs {} {
 proc main {} {
   global argc argv
 
+  set cli_opts [ci_parse_cli $argc $argv]
+  if {[dict get $cli_opts help]} {
+    puts "Usage: vmd -e vmd_view_complexI_9TI4_features.tcl -args [pdb] --show all"
+    return
+  }
+  set vis [ci_resolve_visibility $cli_opts]
+  set show_parts [dict get $vis show_parts]
+  set nd_list [dict get $vis nd_list]
+  set arm_mode [dict get $vis arm_mode]
+  set arm_include_nd [dict get $vis arm_include_nd]
+  set membrane_dist [dict get $vis membrane_dist]
+
   set script_dir [file dirname [info script]]
 
-  if {$argc >= 1} {
-    set pdb_file [lindex $argv 0]
-  } else {
+  set pdb_file [dict get $cli_opts pdb_file]
+  set positionals [dict get $cli_opts positionals]
+  if {$pdb_file eq "" && [llength $positionals] >= 1} {
+    set pdb_file [lindex $positionals 0]
+  }
+  if {$pdb_file eq ""} {
     set pdb_file [file join $script_dir "complexI_9TI4_WT_heavy.pdb"]
     if {![file exists $pdb_file]} {
       set pdb_file [file join $script_dir "complexI_9TI4_WT_heavy_proteinOnly.pdb"]
@@ -148,6 +167,7 @@ proc main {} {
   catch {graphics $molid delete all}
 
   _ci_force_display_prefs
+  ci_reset
 
 	  # Recenter coordinates near the origin so resetview doesn't throw the complex into a corner
 	  # (PDB coords are in an absolute reference frame).
@@ -187,6 +207,7 @@ proc main {} {
   mol color Chain
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "context" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   # --- ND1..ND6 marked (9TI4 chain IDs from our exported PDBs) ---
   # ND labels under the complex (low Z) and other feature labels above (high Z),
@@ -246,6 +267,7 @@ proc main {} {
     mol color ColorID $colorid
     mol material Opaque
     mol addrep $molid
+    ci_register_rep "nd_[string tolower $name]" $molid [expr {[molinfo $molid get numreps] - 1}]
 
     set c [_center_of_selection $molid "chain $chainid and name CA"]
     if {$c ne ""} {
@@ -259,12 +281,22 @@ proc main {} {
     }
   }
 
+  # Arm representations: membrane-near vs peripheral (toggle with --arm / ci_show arm).
+  lassign [ci_make_arm_selections $molid $membrane_dist] sel_arm_mem sel_arm_per
+  if {!$arm_include_nd} {
+    set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
+    set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
+  }
+  ci_add_rep_register "arm_membrane" $molid {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent
+  ci_add_rep_register "arm_peripheral" $molid {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent
+
   # Lipids (if present).
   mol representation Bonds 0.20 12.0
   mol selection "resname CDL PEE PLX"
   mol color Resname
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "lipids" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   # FMN + NADPH.
   mol representation Bonds 0.25 12.0
@@ -272,12 +304,14 @@ proc main {} {
   mol color ColorID 6
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "cofactors" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   mol representation Bonds 0.25 12.0
   mol selection "resname NDP"
   mol color ColorID 2
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "cofactors" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   # NADH site near FMN (NADH not explicitly present in the model).
   mol representation Bonds 0.20 12.0
@@ -285,6 +319,7 @@ proc main {} {
   mol color ColorID 3
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "cofactors" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   # Quinone cavity: show 8Q1 and nearby residues.
   mol representation Bonds 0.25 12.0
@@ -292,12 +327,14 @@ proc main {} {
   mol color ColorID 10
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "cofactors" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   mol representation Bonds 0.20 12.0
   mol selection "protein and within 5 of (resname 8Q1 and chain F)"
   mol color ColorID 10
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "cofactors" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   # --- Feature callouts (ABOVE the complex) ---
   set feat_defs {
@@ -344,6 +381,7 @@ proc main {} {
   mol color Resname
   mol material Opaque
   mol addrep $molid
+  ci_register_rep "fes" $molid [expr {[molinfo $molid get numreps] - 1}]
 
   set cluster_labels {
     {N1a {resname FES and chain O and resid 301 and name FE1} black}
@@ -359,6 +397,9 @@ proc main {} {
     lassign $item label seltext colorname
     _label_at_atom $molid $seltext $label $colorname
   }
+
+  # Apply initial visibility based on CLI toggles.
+  ci_apply_visibility $show_parts $nd_list $arm_mode
 
   # Re-apply after the UI initializes (helps if .vmdrc themes set black background / axes off).
   after idle _ci_force_display_prefs
