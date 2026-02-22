@@ -1,10 +1,12 @@
 # Large local data (do not sync)
 /trajectories/
 
+# Generated simulation build outputs (keep scripts tracked)
+/simulation/out/
+
 # Playwright CLI artifacts (generated snapshots/logs)
 output/playwright/**/.playwright-cli/
 
 # OS junk
 .DS_Store
 Thumbs.db
-
