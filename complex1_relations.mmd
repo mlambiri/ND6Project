@@ -1,0 +1,34 @@
+graph LR
+  subgraph CI["Complex I (mammalian)"]
+    N[N-module: NADH oxidation / FMN / Fe-S]
+    Q[Q-module: quinone reduction region]
+    P[Membrane arm: proton pumping modules]
+  end
+
+  N --> Q
+  Q --> P
+
+  subgraph Core["Core subunits (conceptual)"]
+    C1[Peripheral arm core proteins]
+    C2[Membrane core subunits incl. mtDNA-encoded]
+  end
+
+  subgraph Sup[Supernumerary subunits]
+    S1[Matrix/arm interface cage]
+    S2[IMS-face CHCH-containing lattice]
+    S3[Lipid-binding / stabilising elements]
+  end
+
+  Core --> CI
+  Sup --> CI
+
+  subgraph Assembly[Assembly factors / late maturation]
+    AF2["NDUFAF2 (assembly factor; paralogue)"]
+    A12["NDUFA12 (mature paralogue)"]
+    AFmisc["Additional assembly factors (MCIA, etc.)"]
+  end
+
+  AF2 --> CI
+  A12 --> CI
+  AF2 -.paralogue swap.-> A12
+  AFmisc --> CI

@@ -1,0 +1,10 @@
+# Large local data (do not sync)
+/trajectories/
+
+# Playwright CLI artifacts (generated snapshots/logs)
+output/playwright/**/.playwright-cli/
+
+# OS junk
+.DS_Store
+Thumbs.db
+

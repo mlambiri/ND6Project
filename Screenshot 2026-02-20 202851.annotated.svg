@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  width="961"
+  height="1086"
+  viewBox="0 0 961 1086"
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+>
+  <!-- Background screenshot (from the simulation render) -->
+  <image
+    x="0"
+    y="0"
+    width="961"
+    height="1086"
+    href="Screenshot%202026-02-20%20202851.png"
+    xlink:href="Screenshot%202026-02-20%20202851.png"
+  />
+
+  <defs>
+    <style>
+      .legend-box { fill: rgba(255,255,255,0.88); stroke: #0a0; stroke-width: 3; }
+      .legend-title { font: 700 22px Arial, sans-serif; fill: #0a0; }
+      .legend-text { font: 500 16px Arial, sans-serif; fill: #111; }
+      .marker { fill: #0a0; stroke: #fff; stroke-width: 3; }
+      .marker-text { font: 800 12px Arial, sans-serif; fill: #fff; text-anchor: middle; dominant-baseline: central; }
+      .label { font: 800 18px Arial, sans-serif; fill: #0a0; stroke: #fff; stroke-width: 2; paint-order: stroke; }
+      .callout { fill: rgba(0,170,0,0.10); stroke: #0a0; stroke-width: 4; }
+    </style>
+  </defs>
+
+  <!-- Legend -->
+  <rect class="legend-box" x="28" y="28" width="575" height="170" rx="12" />
+  <text class="legend-title" x="46" y="60">Present in this simulation (“cut4”)</text>
+  <text class="legend-text" x="46" y="90">✓ 49 kDa (PROQ) + PSST (PROC) + TYKY (PROB)</text>
+  <text class="legend-text" x="46" y="115">✓ ND1 (PRS2) + ND3 fragment (PRJ2)</text>
+  <text class="legend-text" x="46" y="140">✓ Q10 (HEZ2) + terminal FeS clusters (HETB/HETC)</text>
+  <text class="legend-text" x="46" y="165">Green “SIM” markers indicate approximate locations.</text>
+
+  <!-- Broad callout around the cut4 structure in the screenshot -->
+  <rect class="callout" x="115" y="145" width="735" height="905" rx="18" />
+
+  <!-- Markers (approximate positions) -->
+  <!-- Peripheral-arm Q-module -->
+  <circle class="marker" cx="540" cy="315" r="16" />
+  <text class="marker-text" x="540" y="315">SIM</text>
+  <text class="label" x="565" y="320">49 kDa (PROQ)</text>
+
+  <circle class="marker" cx="645" cy="430" r="16" />
+  <text class="marker-text" x="645" y="430">SIM</text>
+  <text class="label" x="670" y="435">PSST (PROC)</text>
+
+  <circle class="marker" cx="705" cy="545" r="16" />
+  <text class="marker-text" x="705" y="545">SIM</text>
+  <text class="label" x="730" y="550">TYKY (PROB)</text>
+
+  <!-- Cofactors near the Q-site interface -->
+  <circle class="marker" cx="610" cy="585" r="16" />
+  <text class="marker-text" x="610" y="585">SIM</text>
+  <text class="label" x="635" y="590">FeS (HETB/HETC)</text>
+
+  <circle class="marker" cx="585" cy="635" r="16" />
+  <text class="marker-text" x="585" y="635">SIM</text>
+  <text class="label" x="610" y="640">Q10 (HEZ2)</text>
+
+  <!-- Membrane-arm subunits around the Q channel -->
+  <circle class="marker" cx="500" cy="780" r="16" />
+  <text class="marker-text" x="500" y="780">SIM</text>
+  <text class="label" x="525" y="785">ND1 (PRS2)</text>
+
+  <circle class="marker" cx="590" cy="760" r="16" />
+  <text class="marker-text" x="590" y="760">SIM</text>
+  <text class="label" x="615" y="765">ND3 (PRJ2 fragment)</text>
+</svg>

@@ -1,0 +1,13 @@
+flowchart TD
+  A[NADH binds in N-module] --> B[FMN reduction]
+  B --> C[Electron transfer through Fe-S chain]
+  C --> D[N2 reduces quinone in Q-chamber]
+  D --> E{Q-site loop state?}
+  E -->|ordered / active-resting| F[Efficient quinone chemistry and local proton availability]
+  E -->|disordered / deactive| G[Dormant Q-site: slow substrate-templated reordering required]
+  F --> H[Electrostatic + conformational perturbation at peripheral/membrane interface]
+  H --> I[Propagation into membrane arm: conserved charged networks + hydration gates]
+  I --> J[Vectorial pumping of 4 H+ across membrane arm]
+  J --> K[Reset / state-dependent relaxation]
+  G --> L[Reactivation requires NADH + quinone; slow turnovers]
+  L --> F
