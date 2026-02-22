@@ -13,6 +13,7 @@
 #   --nd ND6 --show context,nd
 #   --arm membrane --show context,nd,arm,lipids
 #   --show all
+#   --strain wt|mut|both
 #
 # Interactive toggles (VMD Tk Console):
 #   ci_list
@@ -55,6 +56,11 @@ proc main {} {
   set arm_mode [dict get $vis arm_mode]
   set arm_include_nd [dict get $vis arm_include_nd]
   set membrane_dist [dict get $vis membrane_dist]
+  set strain_mode [dict get $cli_opts strain_mode]
+  if {![dict get $cli_opts strain_explicit]} {
+    # Default to mutant-only to avoid z-fighting when the two structures overlap.
+    set strain_mode mut
+  }
 
   set script_dir [file dirname [info script]]
   set wt_file [dict get $cli_opts wt_file]
@@ -77,6 +83,8 @@ proc main {} {
 
   set wt  [mol new $wt_file  type pdb waitfor all]
   set mut [mol new $mut_file type pdb waitfor all]
+  set ::ci_wt_molid $wt
+  set ::ci_mut_molid $mut
 
   catch {graphics $wt delete all}
   catch {graphics $mut delete all}
@@ -126,52 +134,79 @@ proc main {} {
   catch {molinfo $wt  set rotate_matrix $rot}
   catch {molinfo $mut set rotate_matrix $rot}
 
-  # WT: protein as gray lines.
-  set rep_wt_context [ci_add_rep $wt {Lines} "protein" {ColorID 8} Opaque]
+  # Context: all protein as chain-colored lines (same style as vmd_view_complexI_9TI4_basic_003.tcl).
+  set rep_wt_context [ci_add_rep $wt {Lines} "protein" {Chain} Opaque]
   ci_register_rep "context" $wt $rep_wt_context
   ci_register_rep "wt" $wt $rep_wt_context
 
-  # Mutant: protein as chain-colored lines.
   set rep_mut_context [ci_add_rep $mut {Lines} "protein" {Chain} Opaque]
   ci_register_rep "context" $mut $rep_mut_context
   ci_register_rep "mut" $mut $rep_mut_context
 
-  # Mutant: ND1..ND6 as thick tubes.
+  # ND1..ND6 as thicker tubes (per-chain colors like basic_003).
   foreach def [ci_nd_defs] {
     lassign $def name chainid colorid
     set key "nd_[string tolower $name]"
-    set rep [ci_add_rep $mut {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque]
-    ci_register_rep $key $mut $rep
-    ci_register_rep "mut" $mut $rep
+
+    set rep_wt [ci_add_rep $wt {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque]
+    ci_register_rep $key $wt $rep_wt
+    ci_register_rep "wt" $wt $rep_wt
+
+    set rep_mut [ci_add_rep $mut {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque]
+    ci_register_rep $key $mut $rep_mut
+    ci_register_rep "mut" $mut $rep_mut
   }
 
-  # Arm representations (on mutant).
-  lassign [ci_make_arm_selections $mut $membrane_dist] sel_arm_mem sel_arm_per
-  if {!$arm_include_nd} {
-    set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
-    set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
+  # ND6: show *all atoms* (not just the tube) when you do "ci_show ND6".
+  # Register the atomistic reps under nd_nd6 so they toggle with ND6.
+  set rep_wt_nd6_atoms [ci_add_rep $wt {Licorice 0.20 12.0 12.0} "chain m" {ColorID 9} Opaque]
+  ci_register_rep "nd_nd6" $wt $rep_wt_nd6_atoms
+  ci_register_rep "wt" $wt $rep_wt_nd6_atoms
+
+  set rep_mut_nd6_atoms [ci_add_rep $mut {Licorice 0.20 12.0 12.0} "chain m" {ColorID 9} Opaque]
+  ci_register_rep "nd_nd6" $mut $rep_mut_nd6_atoms
+  ci_register_rep "mut" $mut $rep_mut_nd6_atoms
+
+  # Highlight only the *mutation difference* (sidechain atoms beyond CB) in red on the mutant.
+  set rep_mut_nd6_diff [ci_add_rep $mut {Licorice 0.28 12.0 12.0} "chain m and resid 64 and not name N CA C O CB" {ColorID 1} Opaque]
+  ci_register_rep "nd_nd6" $mut $rep_mut_nd6_diff
+  ci_register_rep "mut" $mut $rep_mut_nd6_diff
+
+  # Arm representations (WT + mutant).
+  foreach pair [list [list wt $wt] [list mut $mut]] {
+    lassign $pair tag molid
+    lassign [ci_make_arm_selections $molid $membrane_dist] sel_arm_mem sel_arm_per
+    if {!$arm_include_nd} {
+      set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
+      set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
+    }
+    set rep_arm_mem [ci_add_rep $molid {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent]
+    ci_register_rep "arm_membrane" $molid $rep_arm_mem
+    ci_register_rep $tag $molid $rep_arm_mem
+    set rep_arm_per [ci_add_rep $molid {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent]
+    ci_register_rep "arm_peripheral" $molid $rep_arm_per
+    ci_register_rep $tag $molid $rep_arm_per
   }
-  set rep_arm_mem [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent]
-  ci_register_rep "arm_membrane" $mut $rep_arm_mem
-  ci_register_rep "mut" $mut $rep_arm_mem
-  set rep_arm_per [ci_add_rep $mut {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent]
-  ci_register_rep "arm_peripheral" $mut $rep_arm_per
-  ci_register_rep "mut" $mut $rep_arm_per
 
-  # Mutant: lipids + cofactors/clusters as bonds; Fe-S clusters as tiny spheres.
-  set rep_lipids [ci_add_rep $mut {Bonds 0.20 12.0} "resname CDL PEE PLX" {Resname} Opaque]
-  ci_register_rep "lipids" $mut $rep_lipids
-  ci_register_rep "mut" $mut $rep_lipids
+  # Lipids + cofactors/clusters as bonds; Fe-S clusters as tiny spheres (WT + mutant).
+  foreach pair [list [list wt $wt] [list mut $mut]] {
+    lassign $pair tag molid
 
-  set rep_cof [ci_add_rep $mut {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque]
-  ci_register_rep "cofactors" $mut $rep_cof
-  ci_register_rep "mut" $mut $rep_cof
+    set rep_lipids [ci_add_rep $molid {Bonds 0.20 12.0} "resname CDL PEE PLX" {Resname} Opaque]
+    ci_register_rep "lipids" $molid $rep_lipids
+    ci_register_rep $tag $molid $rep_lipids
 
-  set rep_fes [ci_add_rep $mut {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque]
-  ci_register_rep "fes" $mut $rep_fes
-  ci_register_rep "mut" $mut $rep_fes
+    set rep_cof [ci_add_rep $molid {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque]
+    ci_register_rep "cofactors" $molid $rep_cof
+    ci_register_rep $tag $molid $rep_cof
+
+    set rep_fes [ci_add_rep $molid {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque]
+    ci_register_rep "fes" $molid $rep_fes
+    ci_register_rep $tag $molid $rep_fes
+  }
 
   ci_apply_visibility $show_parts $nd_list $arm_mode
+  ci_strain $strain_mode
 
   after idle _ci_force_display_prefs_basic
   after 200 _ci_force_display_prefs_basic
@@ -180,4 +215,3 @@ proc main {} {
 }
 
 main
-

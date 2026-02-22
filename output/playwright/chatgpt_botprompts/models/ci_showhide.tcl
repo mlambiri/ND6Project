@@ -6,6 +6,8 @@
 #   ci_show <group>
 #   ci_hide <group>
 #   ci_focus_nd ND6
+#   ci_strain wt|mut|both     (compare scripts that set ::ci_wt_molid/::ci_mut_molid)
+#   ci_toggle_strain
 #
 # And helper procs for scripts:
 #   ci_reset
@@ -183,6 +185,67 @@ ci_show all
 ci_hide all
 
 Tip: some scripts register extra groups (e.g., wt/mut). Run ci_list to see what's available.}
+
+  if {[info exists ::ci_wt_molid] && [info exists ::ci_mut_molid]} {
+    puts ""
+    puts "# Compare (WT vs mutant)"
+    puts "ci_strain wt      ;# show WT only"
+    puts "ci_strain mut     ;# show mutant only"
+    puts "ci_strain both    ;# show both"
+    puts "ci_toggle_strain"
+  }
+}
+
+proc ci_strain {mode} {
+  set m [string tolower [string trim $mode]]
+  switch -exact -- $m {
+    "" -
+    both -
+    all { set m both }
+    wt -
+    wildtype { set m wt }
+    mut -
+    mutant -
+    m64v { set m mut }
+    default {
+      puts "ci_strain expects wt|mut|both (got: $mode)"
+      return
+    }
+  }
+
+  if {![info exists ::ci_wt_molid] || ![info exists ::ci_mut_molid]} {
+    puts "ci_strain: WT/MUT molids not set (compare scripts set ::ci_wt_molid and ::ci_mut_molid)."
+    return
+  }
+
+  switch -exact -- $m {
+    wt {
+      catch {mol on  $::ci_wt_molid}
+      catch {mol off $::ci_mut_molid}
+    }
+    mut {
+      catch {mol off $::ci_wt_molid}
+      catch {mol on  $::ci_mut_molid}
+    }
+    both {
+      catch {mol on $::ci_wt_molid}
+      catch {mol on $::ci_mut_molid}
+    }
+    default { }
+  }
+
+  set ::ci_strain_mode $m
+}
+
+proc ci_toggle_strain {} {
+  if {![info exists ::ci_strain_mode]} {
+    set ::ci_strain_mode both
+  }
+  if {$::ci_strain_mode eq "wt"} {
+    ci_strain mut
+    return
+  }
+  ci_strain wt
 }
 
 proc _ci_sh_set_group {name visible} {
@@ -239,6 +302,8 @@ proc ci_parse_cli {argc argv} {
     hide_raw {} \
     nd_explicit 0 \
     nd_raw "all" \
+    strain_explicit 0 \
+    strain_mode "both" \
     arm_explicit 0 \
     arm_mode "membrane" \
     arm_include_nd 0 \
@@ -285,6 +350,11 @@ proc ci_parse_cli {argc argv} {
         dict set opts nd_explicit 1
         dict set opts nd_raw [lindex $argv $i]
       }
+      --strain {
+        incr i
+        dict set opts strain_explicit 1
+        dict set opts strain_mode [string tolower [string trim [lindex $argv $i]]]
+      }
       --arm {
         incr i
         dict set opts arm_explicit 1
@@ -317,6 +387,24 @@ proc ci_parse_cli {argc argv} {
       }
     }
   }
+
+  # Normalize strain_mode even if unused by most scripts.
+  set s [string tolower [string trim [dict get $opts strain_mode]]]
+  switch -exact -- $s {
+    "" -
+    both -
+    all { set s both }
+    wt -
+    wildtype { set s wt }
+    mut -
+    mutant -
+    m64v { set s mut }
+    default {
+      puts "WARNING: --strain expects wt|mut|both (got: $s); using both"
+      set s both
+    }
+  }
+  dict set opts strain_mode $s
 
   dict set opts positionals $positional
   return $opts
