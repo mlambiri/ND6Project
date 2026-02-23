@@ -50,6 +50,7 @@ Commands:
 
 Tips:
   - Run ci_list to see registered rep groups.
+  - Run ci_help for common ND/lipids/cofactors toggles.
   - Background is forced to white (reapplied after idle).}
 }
 
@@ -60,7 +61,11 @@ proc ci_view {mode} {
   switch -exact -- $m {
     complex {
       ci_hide all
-      ci_show complex
+      ci_show context
+      ci_show nd
+      ci_show lipids
+      ci_show cofactors
+      ci_show fes
     }
     membrane {
       ci_hide all
@@ -68,7 +73,11 @@ proc ci_view {mode} {
     }
     both {
       ci_hide all
-      ci_show complex
+      ci_show context
+      ci_show nd
+      ci_show lipids
+      ci_show cofactors
+      ci_show fes
       ci_show membrane
     }
     default {
@@ -207,6 +216,7 @@ proc main {} {
   }
 
   display resetview
+  scale by 0.92
 
   # Apply a consistent orientation to both molecules (optional).
   if {$do_rotate} {
@@ -216,25 +226,39 @@ proc main {} {
   }
 
   # --- Representations ---
-  # Complex: chain-colored cartoon + ND tubes.
-  set repid [ci_add_rep_register "context" $c1 {NewCartoon} "protein" {Chain} Opaque]
-  ci_register_rep "complex" $c1 $repid
+  # Complex: match vmd_view_complexI_9TI4_basic_003.tcl (chain-colored lines + ND tubes + optional extras).
 
+  # Context: all protein as chain-colored lines.
+  ci_add_rep_register "context" $c1 {Lines} "protein" {Chain} Opaque
+
+  # ND subunits as thicker tubes (per-chain so colors stay distinct).
   foreach def [ci_nd_defs] {
     lassign $def name chainid colorid
     set key "nd_[string tolower $name]"
-    set repid [ci_add_rep_register $key $c1 {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque]
-    ci_register_rep "complex" $c1 $repid
+    ci_add_rep_register $key $c1 {Tube 0.60 12.0} "protein and chain $chainid" [list ColorID $colorid] Opaque
   }
 
-  # Membrane: phosphorus atoms as semi-transparent spheres (fast + shows bilayer).
-  set repid [ci_add_rep_register "mem_p" $mem {VDW 1.00 12.0} "name P" {ColorID 2} Transparent]
+  # Arm representations: membrane-near vs peripheral, using proximity to lipids (or ND neighborhood fallback).
+  set membrane_dist 5.0
+  set arm_include_nd 0
+  lassign [ci_make_arm_selections $c1 $membrane_dist] sel_arm_mem sel_arm_per
+  if {!$arm_include_nd} {
+    set sel_arm_mem "$sel_arm_mem and not (chain s i j r l m)"
+    set sel_arm_per "$sel_arm_per and not (chain s i j r l m)"
+  }
+  ci_add_rep_register "arm_membrane" $c1 {Tube 0.35 12.0} $sel_arm_mem {ColorID 2} Transparent
+  ci_add_rep_register "arm_peripheral" $c1 {Tube 0.35 12.0} $sel_arm_per {ColorID 6} Transparent
+
+  # Lipids / cofactors / Fe-S (may be empty for proteinOnly models; reps are still registered for ci_show/ci_hide).
+  ci_add_rep_register "lipids" $c1 {Bonds 0.20 12.0} "resname CDL PEE PLX DGT" {Resname} Opaque
+  ci_add_rep_register "cofactors" $c1 {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque
+  ci_add_rep_register "fes" $c1 {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque
+
+  # Membrane: phosphorus atoms as grey spheres (fast + shows bilayer headgroups).
+  set repid [ci_add_rep_register "mem_p" $mem {VDW 1.00 12.0} "name P" {ColorID 2} Opaque]
   ci_register_rep "membrane" $mem $repid
 
   # Default visibility.
-  ci_hide all
-  ci_show complex
-  ci_show membrane
   if {$show_mode eq "complex"} {
     ci_view complex
   } elseif {$show_mode eq "membrane"} {

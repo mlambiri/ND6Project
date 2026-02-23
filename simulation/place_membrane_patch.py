@@ -12,6 +12,8 @@ ION_RESNAMES = {"SOD", "CLA", "POT", "CAL", "MG", "ZN", "NA", "CL"}
 
 # Lipid residue names seen in this repo (PDB/PSF may use 3- or 4-letter variants).
 DEFAULT_LIPID_RESNAMES = {"POP", "POPC", "TYC", "CDL", "PEE", "PLX", "DGT"}
+DEFAULT_REFERENCE_LIPID_RESNAMES = {"CDL", "PEE", "PLX", "DGT"}
+DEFAULT_REFERENCE_PDB = Path("output/playwright/chatgpt_botprompts/models/complexI_9TI4_WT_heavy.pdb")
 
 DEFAULT_EXCLUDE_FOR_PROTEIN_BBOX = WATER_RESNAMES | ION_RESNAMES | DEFAULT_LIPID_RESNAMES
 
@@ -284,6 +286,18 @@ def compute_p_points(
     return points
 
 
+def compute_resname_points(
+    pdb_path: Path,
+    *,
+    resnames: set[str],
+) -> list[tuple[float, float, float]]:
+    points: list[tuple[float, float, float]] = []
+    for resname, _atomname, x, y, z, _line in iter_pdb_atoms(pdb_path):
+        if resname in resnames:
+            points.append((x, y, z))
+    return points
+
+
 def transform_pdb(
     *,
     in_pdb: Path,
@@ -338,6 +352,17 @@ def _parse_chain_list(chains: str) -> set[str]:
             continue
         parts.append(part.lower())
     return set("".join(parts))
+
+
+def _parse_resname_list(values: Iterable[str]) -> set[str]:
+    out: set[str] = set()
+    for item in values:
+        for part in str(item).replace(";", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            out.add(part.upper())
+    return out
 
 
 def compute_chain_ca_points(pdb_path: Path, *, chains: set[str]) -> list[tuple[float, float, float]]:
@@ -399,13 +424,36 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description=(
             "Rotate + translate a VMD membrane patch PDB into the coordinate frame of a Complex I model.\n\n"
-            "Membrane orientation is inferred from PCA of CA atoms in the ND subunits (default chains: s,i,j,r,l,m).\n"
-            "The patch is then centered on the ND CA centroid.\n"
+            "By default, membrane orientation is inferred from PCA of lipid atoms in a reference model.\n"
+            "The patch is then centered on the ND footprint in that membrane plane.\n"
         )
     )
     ap.add_argument("--protein-pdb", required=True, help="Complex I PDB (protein-only or full system).")
     ap.add_argument("--patch-pdb", required=True, help="Membrane patch PDB produced by VMD membrane plugin.")
     ap.add_argument("--out-pdb", required=True, help="Output placed membrane PDB path.")
+    ap.add_argument(
+        "--plane-source",
+        choices=["lipids", "nd"],
+        default="lipids",
+        help="How to infer membrane plane: 'lipids' (default) or 'nd' (CA PCA).",
+    )
+    ap.add_argument(
+        "--reference-pdb",
+        default=str(DEFAULT_REFERENCE_PDB),
+        help=(
+            "Reference model (with lipids) used when --plane-source lipids "
+            f"(default: {DEFAULT_REFERENCE_PDB.as_posix()})."
+        ),
+    )
+    ap.add_argument(
+        "--reference-lipids",
+        action="append",
+        default=[],
+        help=(
+            "Comma-separated lipid residue names to use from --reference-pdb when fitting the membrane plane "
+            "(can be provided multiple times). Default: CDL,PEE,PLX,DGT."
+        ),
+    )
     ap.add_argument(
         "--strip-waters",
         action="store_true",
@@ -446,7 +494,28 @@ def main() -> int:
             f"(chains={sorted(nd_chains)}; points={len(nd_ca_points)})."
         )
 
-    nd_center, u_ref, v_ref, n_ref, ref_eigs = _pca_basis(nd_ca_points)
+    # Infer membrane plane basis (u_ref, v_ref, n_ref) and a point on the plane.
+    plane_source = str(args.plane_source).lower().strip()
+    plane_point: tuple[float, float, float]
+    ref_eigs: list[float]
+
+    if plane_source == "lipids":
+        ref_pdb = Path(args.reference_pdb)
+        if not ref_pdb.exists():
+            raise SystemExit(f"Missing --reference-pdb: {ref_pdb}")
+
+        ref_lipids = set(DEFAULT_REFERENCE_LIPID_RESNAMES)
+        ref_lipids |= _parse_resname_list(args.reference_lipids)
+        ref_points = compute_resname_points(ref_pdb, resnames=ref_lipids)
+        if len(ref_points) < 3:
+            raise SystemExit(
+                f"Not enough reference lipid atoms to fit plane in {ref_pdb} "
+                f"(resnames={sorted(ref_lipids)}; atoms={len(ref_points)})."
+            )
+
+        plane_point, u_ref, v_ref, n_ref, ref_eigs = _pca_basis(ref_points)
+    else:
+        plane_point, u_ref, v_ref, n_ref, ref_eigs = _pca_basis(nd_ca_points)
 
     # Patch: use its lipid phosphorus atoms as the patch "midplane center".
     patch_p_points = compute_p_points(patch_pdb, lipid_resnames=None)
@@ -458,15 +527,14 @@ def main() -> int:
         r0, r1, r2 = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
         rotated_patch_center = patch_plane_point
     else:
-        # Rotate patch so its normal matches the ND-derived membrane normal.
+        # Rotate patch so its normal matches the inferred membrane normal.
         # We build a rotation that maps patch XYZ axes to (u_ref,v_ref,n_ref) in the current coordinate frame.
         r0, r1, r2 = u_ref, v_ref, n_ref
         rotated_patch_center = _mat_vec_mul_cols(r0, r1, r2, patch_plane_point)
 
     # Center target:
-    # - in-plane center uses the ND bounding box center in the inferred membrane plane (u/v),
-    #   so the requested margin applies symmetrically.
-    # - midplane (along n) uses the median of ND CA projections for robustness.
+    # - in-plane center uses the ND bounding box center in the inferred membrane plane (u/v).
+    # - midplane (along n) is anchored to the inferred plane itself (n·x = constant).
     nd_all_points = compute_chain_atom_points(protein_pdb, chains=nd_chains)
     mins_u = math.inf
     maxs_u = -math.inf
@@ -482,7 +550,7 @@ def main() -> int:
 
     center_u = 0.5 * (mins_u + maxs_u)
     center_v = 0.5 * (mins_v + maxs_v)
-    center_n = _median([_dot(n_ref, p) for p in nd_ca_points])
+    center_n = _dot(n_ref, plane_point)
     target_center = _add(_add(_scale(u_ref, center_u), _scale(v_ref, center_v)), _scale(n_ref, center_n))
 
     t = _sub(target_center, rotated_patch_center)
@@ -507,10 +575,17 @@ def main() -> int:
     print(f"Protein: {protein_pdb}")
     print(f"Patch:   {patch_pdb}")
     print(f"ND chains:     {','.join(sorted(nd_chains))}  (CA atoms: {len(nd_ca_points)})")
-    print(f"ND eigvals:    {', '.join(f'{x:.6f}' for x in ref_eigs)}")
+    print(f"Plane source:  {plane_source}")
+    if plane_source == "lipids":
+        ref_pdb = Path(args.reference_pdb)
+        ref_lipids = set(DEFAULT_REFERENCE_LIPID_RESNAMES)
+        ref_lipids |= _parse_resname_list(args.reference_lipids)
+        print(f"Reference PDB: {ref_pdb}")
+        print(f"Ref lipids:    {','.join(sorted(ref_lipids))}")
+    print(f"Plane eigvals: {', '.join(f'{x:.6f}' for x in ref_eigs)}")
     print(f"Patch P atoms: {len(patch_p_points)}")
     print(f"Patch eigvals: {', '.join(f'{x:.6f}' for x in patch_eigs)}")
-    print(f"ND normal:     nx={n_ref[0]:.6f} ny={n_ref[1]:.6f} nz={n_ref[2]:.6f}")
+    print(f"Plane normal:  nx={n_ref[0]:.6f} ny={n_ref[1]:.6f} nz={n_ref[2]:.6f}")
     print(f"Rotation:      {'disabled' if args.no_rotate else 'enabled'}")
     print(f"Translate (A): dX={t[0]:.3f} dY={t[1]:.3f} dZ={t[2]:.3f}")
     print(f"Recommended patch (A): x={rec_x:.3f} y={rec_y:.3f}  (margin={float(args.margin):.1f}/side; ND-only)")

@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Iterable
 
 
+DEFAULT_REFERENCE_LIPID_RESNAMES = {"CDL", "PEE", "PLX", "DGT"}
+DEFAULT_REFERENCE_PDB = Path("output/playwright/chatgpt_botprompts/models/complexI_9TI4_WT_heavy.pdb")
+
 DEFAULT_EXCLUDE_RESNAMES = {
     # Waters
     "HOH",
@@ -88,7 +91,8 @@ def iter_pdb_atoms(path: Path):
                 continue
             if len(line) < 54:
                 continue
-            resname = line[17:20].strip().upper()
+            # Read up to 4 chars (VMD/CHARMM-style can use 4-letter residue names).
+            resname = line[17:21].strip().upper()
             chain = line[21:22].strip().upper()
             atomname = line[12:16].strip().upper()
             try:
@@ -236,6 +240,17 @@ def _parse_chain_list(chains: str) -> set[str]:
     return set("".join(parts))
 
 
+def _parse_resname_list(values: Iterable[str]) -> set[str]:
+    out: set[str] = set()
+    for item in values:
+        for part in str(item).replace(";", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            out.add(part.upper())
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Compute recommended membrane patch size (dims + 2*margin).",
@@ -244,23 +259,44 @@ def main() -> int:
     ap.add_argument("--margin", type=float, default=25.0, help="Margin in A to add on each side (default: 25).")
     ap.add_argument(
         "--mode",
-        choices=["nd_plane", "xy"],
-        default="nd_plane",
+        choices=["lipid_plane", "nd_plane", "xy"],
+        default="lipid_plane",
         help=(
-            "Sizing mode: 'nd_plane' infers the membrane plane from ND subunits (recommended); "
-            "'xy' uses the axis-aligned X/Y bounding box."
+            "Sizing mode: 'lipid_plane' infers the membrane plane from native lipid atoms in a reference model "
+            "(recommended); 'nd_plane' infers the membrane plane from ND subunits; 'xy' uses the axis-aligned X/Y "
+            "bounding box."
         ),
     )
     ap.add_argument(
         "--extent",
         choices=["nd", "protein"],
         default="nd",
-        help="When --mode nd_plane, compute extents from ND subunits ('nd') or full protein projection ('protein').",
+        help=(
+            "When --mode lipid_plane or nd_plane, compute extents from ND subunits ('nd') or full protein projection "
+            "('protein')."
+        ),
     )
     ap.add_argument(
         "--nd-chains",
         default="s,i,j,r,l,m",
         help="ND chain IDs used to infer membrane orientation (default: s,i,j,r,l,m).",
+    )
+    ap.add_argument(
+        "--reference-pdb",
+        default=str(DEFAULT_REFERENCE_PDB),
+        help=(
+            "Reference model (with lipids) used when --mode lipid_plane "
+            f"(default: {DEFAULT_REFERENCE_PDB.as_posix()})."
+        ),
+    )
+    ap.add_argument(
+        "--reference-lipids",
+        action="append",
+        default=[],
+        help=(
+            "Comma-separated lipid residue names to use from --reference-pdb when fitting the membrane plane "
+            "(can be provided multiple times). Default: CDL,PEE,PLX,DGT."
+        ),
     )
     ap.add_argument(
         "--exclude-resnames",
@@ -317,7 +353,6 @@ def main() -> int:
         print(f"Recommended membrane patch (A): x={patch_x:.3f} y={patch_y:.3f}")
         return 0
 
-    # nd_plane mode
     nd_chains = _parse_chain_list(args.nd_chains)
     nd_ca: list[tuple[float, float, float]] = []
     nd_all: list[tuple[float, float, float]] = []
@@ -332,13 +367,40 @@ def main() -> int:
             if atomname == "CA":
                 nd_ca.append((x, y, z))
 
-    if len(nd_ca) < 3:
+    if len(nd_all) < 1:
         raise SystemExit(
-            f"Not enough ND CA atoms to infer membrane plane (chains={sorted(c.lower() for c in nd_chains)}; "
-            f"found {len(nd_ca)})."
+            f"No ND atoms found (chains={sorted(c.lower() for c in nd_chains)}). Check --nd-chains or input PDB."
         )
 
-    _mean, u, v, nvec, eigs = _pca_basis(nd_ca)
+    if args.mode == "nd_plane":
+        if len(nd_ca) < 3:
+            raise SystemExit(
+                f"Not enough ND CA atoms to infer membrane plane (chains={sorted(c.lower() for c in nd_chains)}; "
+                f"found {len(nd_ca)})."
+            )
+        _mean, u, v, nvec, eigs = _pca_basis(nd_ca)
+        plane_label = "nd_plane (ND PCA inferred)"
+        ref_info = ""
+    else:
+        # lipid_plane mode: infer membrane plane from native lipid atoms in a reference PDB.
+        ref_pdb = Path(args.reference_pdb)
+        if not ref_pdb.exists():
+            raise SystemExit(f"Missing --reference-pdb: {ref_pdb}")
+
+        ref_lipids = set(DEFAULT_REFERENCE_LIPID_RESNAMES)
+        ref_lipids |= _parse_resname_list(args.reference_lipids)
+        ref_points: list[tuple[float, float, float]] = []
+        for resname, _chain, _atomname, x, y, z in iter_pdb_atoms(ref_pdb):
+            if resname in ref_lipids:
+                ref_points.append((x, y, z))
+        if len(ref_points) < 3:
+            raise SystemExit(
+                f"Not enough reference lipid atoms to fit plane in {ref_pdb} "
+                f"(resnames={sorted(ref_lipids)}; atoms={len(ref_points)})."
+            )
+        _mean, u, v, nvec, eigs = _pca_basis(ref_points)
+        plane_label = "lipid_plane (reference lipid PCA)"
+        ref_info = f"\nReference PDB: {ref_pdb}\nRef lipids: {','.join(sorted(ref_lipids))}"
 
     points_for_extent = prot_all if args.extent == "protein" else nd_all
     if len(points_for_extent) < 1:
@@ -360,10 +422,13 @@ def main() -> int:
     patch_y = dv + 2.0 * float(args.margin)
 
     print(f"PDB: {pdb_path}")
-    print("Mode: nd_plane (ND PCA inferred)")
+    print(f"Mode: {plane_label}")
+    if ref_info:
+        print(ref_info)
     print(f"ND chains: {','.join(sorted(c.lower() for c in nd_chains))}")
-    print(f"ND CA atoms used: {len(nd_ca)}")
-    print(f"ND eigvals: {', '.join(f'{x:.6f}' for x in eigs)}")
+    if args.mode == "nd_plane":
+        print(f"ND CA atoms used: {len(nd_ca)}")
+    print(f"Plane eigvals: {', '.join(f'{x:.6f}' for x in eigs)}")
     print(f"Membrane normal (unit): nx={nvec[0]:.6f} ny={nvec[1]:.6f} nz={nvec[2]:.6f}")
     print(f"Extent selection: {args.extent}")
     print(f"Extents in membrane plane (A): du={du:.3f} dv={dv:.3f}")
