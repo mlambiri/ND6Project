@@ -1,8 +1,8 @@
 # Large local data (do not sync)
 /trajectories/
 
-# Generated simulation build outputs (keep scripts tracked)
-/simulation/out/
+# Generated simulation build outputs
+# NOTE: `simulation/out/` is tracked for this project.
 
 # Playwright CLI artifacts (generated snapshots/logs)
 output/playwright/**/.playwright-cli/
@@ -14,3 +14,6 @@ Thumbs.db
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local debug artifacts (keep main membrane outputs tracked)
+simulation/out/_lipids_only_test*
