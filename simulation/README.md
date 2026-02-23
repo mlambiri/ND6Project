@@ -4,10 +4,12 @@ These helpers are for building a **lipid bilayer patch** sized to a Complex I sy
 
 ## Requirement implemented
 
-The membrane patch X/Y dimensions are computed from the Complex I bounding box in the membrane plane:
+The membrane patch dimensions are computed in the **inferred membrane plane**:
 
-- `membrane_x = (complex_x + 50 A)`
-- `membrane_y = (complex_y + 50 A)`
+- infer the membrane normal from **PCA of CA atoms in ND1..ND6**
+- compute ND extents in that plane
+- `membrane_x = (extent_u + 50 A)`
+- `membrane_y = (extent_v + 50 A)`
 
 This corresponds to a **+25 A margin on each side** (default).
 
@@ -17,7 +19,7 @@ This corresponds to a **+25 A margin on each side** (default).
 python simulation/calc_membrane_patch_size.py --pdb /path/to/system.pdb --margin 25
 ```
 
-This prints the Complex I (non-water / non-ion / non-lipid) extents and the recommended membrane X/Y.
+This prints the ND-plane extents and the recommended membrane patch X/Y.
 
 Recommended inputs (this repo's **full Complex I** models):
 
@@ -35,8 +37,12 @@ python simulation/calc_membrane_patch_size.py --pdb output/playwright/chatgpt_bo
 
 Requires VMD with the `membrane` plugin available.
 
+1) Run step (1) and note the recommended `x=` and `y=` values.
+
+2) Build the patch using explicit sizes (recommended):
+
 ```bash
-vmd -dispdev text -e simulation/vmd_build_membrane_patch.tcl -args --pdb output/playwright/chatgpt_botprompts/models/complexI_9TI4_WT_heavy_proteinOnly.pdb --margin 25 --lipid POPC --out simulation/out/complexI_9TI4_membrane
+vmd -dispdev text -e simulation/vmd_build_membrane_patch.tcl -args --pdb output/playwright/chatgpt_botprompts/models/complexI_9TI4_WT_heavy_proteinOnly.pdb --x <X_A> --y <Y_A> --lipid POPC --out simulation/out/complexI_9TI4_membrane --place 0
 ```
 
 Outputs (prefix = `--out`):
@@ -53,13 +59,13 @@ Notes:
 
 ## 3) Place the patch into the Complex I coordinate frame (Python)
 
-The membrane patch produced by the VMD `membrane` plugin is typically centered near `z~0`. Your Complex I models are not, so you generally need to **translate the patch in Z** (and usually X/Y as well) to match the protein coordinate frame.
+The membrane patch produced by the VMD `membrane` plugin is centered near `z~0` and aligned to XYZ axes. Your Complex I models are not, so you generally need to **rotate + translate** the patch to match the protein coordinate frame.
 
 This script:
 
-- aligns X/Y using the **protein bounding-box center**
-- aligns Z by matching the **bilayer midplane** using lipid phosphorus (`atom name P`) atoms
-- uses native lipid `P` atoms from `complexI_9TI4_WT_heavy.pdb` by default to determine the target midplane Z
+- infers the membrane plane from **ND CA atoms**
+- rotates the patch so its normal matches that plane
+- centers the patch on the **ND bounding-box center** in the membrane plane (so margins apply on all sides)
 
 Example:
 

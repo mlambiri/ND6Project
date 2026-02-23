@@ -6,6 +6,7 @@
 # Usage:
 #   vmd -dispdev text -e simulation/vmd_build_membrane_patch.tcl -args --pdb system.pdb
 #   vmd -dispdev text -e simulation/vmd_build_membrane_patch.tcl -args --pdb system.pdb --margin 25 --lipid POPC --out simulation/out/membrane
+#   vmd -dispdev text -e simulation/vmd_build_membrane_patch.tcl -args --pdb system.pdb --x 300 --y 220 --lipid POPC --out simulation/out/membrane --place 0
 #
 # Notes:
 # - Assumes membrane plane is XY and normal is Z in the input coordinates.
@@ -28,6 +29,8 @@ proc _usage {} {
   puts "  --psf <file.psf>     Optional PSF (if you want to load with topology)"
   puts "  --sel <selection>    Atom selection for extent calculation (default excludes water/ions/lipids)"
   puts "  --margin <A>         Margin (A) per side (default: 25)"
+  puts "  --x <A>              Override patch size X (A); requires --y"
+  puts "  --y <A>              Override patch size Y (A); requires --x"
   puts "  --lipid <name>       Lipid name for VMD membrane plugin (default: POPC)"
   puts "  --out <prefix>       Output prefix (default: membrane_patch)"
   puts "  --place <0|1>        Translate patch to protein XY center (default: 1)"
@@ -44,6 +47,8 @@ proc _parse_args {argc argv} {
     psf "" \
     sel $default_sel \
     margin 25.0 \
+    x "" \
+    y "" \
     lipid "POPC" \
     out "membrane_patch" \
     place 1 \
@@ -77,6 +82,24 @@ proc _parse_args {argc argv} {
           set dv 25.0
         }
         dict set opts margin $dv
+      }
+      --x {
+        incr i
+        set v [lindex $argv $i]
+        if {[catch {expr {double($v)}} dv]} {
+          puts "WARNING: --x expects a number (got: $v); ignoring"
+        } else {
+          dict set opts x $dv
+        }
+      }
+      --y {
+        incr i
+        set v [lindex $argv $i]
+        if {[catch {expr {double($v)}} dv]} {
+          puts "WARNING: --y expects a number (got: $v); ignoring"
+        } else {
+          dict set opts y $dv
+        }
       }
       --lipid {
         incr i
@@ -136,6 +159,8 @@ proc main {} {
   set psf_file [dict get $opts psf]
   set seltext  [dict get $opts sel]
   set margin   [dict get $opts margin]
+  set x_over   [dict get $opts x]
+  set y_over   [dict get $opts y]
   set lipid    [dict get $opts lipid]
   set outpref  [dict get $opts out]
   set do_place [dict get $opts place]
@@ -163,13 +188,26 @@ proc main {} {
   set dx [expr {[lindex $maxv 0] - [lindex $minv 0]}]
   set dy [expr {[lindex $maxv 1] - [lindex $minv 1]}]
 
-  set patch_x [expr {$dx + 2.0*$margin}]
-  set patch_y [expr {$dy + 2.0*$margin}]
+  if {($x_over ne "") || ($y_over ne "")} {
+    if {($x_over eq "") || ($y_over eq "")} {
+      puts "ERROR: --x and --y must be provided together."
+      quit
+    }
+    set patch_x $x_over
+    set patch_y $y_over
+    puts "Complex extents from selection '$seltext':"
+    puts [format "  dx=%.3f A  dy=%.3f A" $dx $dy]
+    puts "Membrane patch override:"
+    puts [format "  x=%.3f A  y=%.3f A" $patch_x $patch_y]
+  } else {
+    set patch_x [expr {$dx + 2.0*$margin}]
+    set patch_y [expr {$dy + 2.0*$margin}]
 
-  puts "Complex extents from selection '$seltext':"
-  puts [format "  dx=%.3f A  dy=%.3f A" $dx $dy]
-  puts [format "Membrane patch target (margin=%.3f A per side):" $margin]
-  puts [format "  x=%.3f A  y=%.3f A" $patch_x $patch_y]
+    puts "Complex extents from selection '$seltext':"
+    puts [format "  dx=%.3f A  dy=%.3f A" $dx $dy]
+    puts [format "Membrane patch target (margin=%.3f A per side):" $margin]
+    puts [format "  x=%.3f A  y=%.3f A" $patch_x $patch_y]
+  }
 
   if {[catch {package require membrane} err]} {
     puts "ERROR: could not load VMD membrane plugin (package 'membrane')."
