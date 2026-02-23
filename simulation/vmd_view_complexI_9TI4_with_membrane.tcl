@@ -4,7 +4,7 @@
 #   "C:\Program Files\University of Illinois\VMD2\vmd.exe" -dispdev win -e simulation/vmd_view_complexI_9TI4_with_membrane.tcl
 #
 # Optional args (after -args):
-#   --pdb <complex.pdb>        Complex I model (default: WT proteinOnly)
+#   --pdb <complex.pdb>        Complex I model (default: WT heavy; includes lipids/cofactors/Fe-S)
 #   --mem-psf <membrane.psf>   Membrane PSF (default: placed lipidsOnly)
 #   --mem-pdb <membrane.pdb>   Membrane PDB (default: placed lipidsOnly)
 #   --show <complex|membrane|both>  Initial view (default: both)
@@ -91,7 +91,7 @@ proc _parse_args {argc argv} {
 
   set opts [dict create \
     help 0 \
-    pdb [file join $_ci_repo_root "output" "playwright" "chatgpt_botprompts" "models" "complexI_9TI4_WT_heavy_proteinOnly.pdb"] \
+    pdb [file join $_ci_repo_root "output" "playwright" "chatgpt_botprompts" "models" "complexI_9TI4_WT_heavy.pdb"] \
     mem_psf [file join $_ci_repo_root "simulation" "out" "complexI_9TI4_membrane_placed_lipidsOnly.psf"] \
     mem_pdb [file join $_ci_repo_root "simulation" "out" "complexI_9TI4_membrane_placed_lipidsOnly.pdb"] \
     show "both" \
@@ -254,8 +254,8 @@ proc main {} {
   ci_add_rep_register "cofactors" $c1 {Bonds 0.25 12.0} "resname FMN NDP 8Q1 SF4 FES" {Resname} Opaque
   ci_add_rep_register "fes" $c1 {VDW 0.80 12.0} "resname SF4 FES" {Resname} Opaque
 
-  # Membrane: phosphorus atoms as grey spheres (fast + shows bilayer headgroups).
-  set repid [ci_add_rep_register "mem_p" $mem {VDW 1.00 12.0} "name P" {ColorID 2} Opaque]
+  # Membrane: connected bilayer "strands" (no spheres).
+  set repid [ci_add_rep_register "mem_strands" $mem {Bonds 0.08 12.0} "all" {ColorID 2} Opaque]
   ci_register_rep "membrane" $mem $repid
 
   # Default visibility.
@@ -270,7 +270,7 @@ proc main {} {
   after idle _ci_force_display_prefs
   after 200 _ci_force_display_prefs
 
-  puts "Loaded. Run: ci_mem_help"
+  puts "Loaded. Run: ci_mem_help  (also: ci_help)"
 }
 
 main
