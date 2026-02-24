@@ -18,7 +18,56 @@
 #   ci_view membrane
 #   ci_view both
 
-set _ci_repo_root [file normalize [file join [file dirname [info script]] ".."]]
+proc _ci_find_repo_root {} {
+  # Try to locate the repo root robustly (some VMD builds change cwd/startup paths).
+  # We define the repo root as the directory that contains:
+  #   output/playwright/chatgpt_botprompts/models/ci_showhide.tcl
+
+  set script_dir [file dirname [info script]]
+  set want_rel [file join "output" "playwright" "chatgpt_botprompts" "models" "ci_showhide.tcl"]
+
+  set candidates {}
+  lappend candidates [file normalize [file join $script_dir ".."]]
+  lappend candidates [file normalize $script_dir]
+  lappend candidates [file normalize [pwd]]
+  lappend candidates [file normalize [file join [pwd] ".."]]
+  if {[info exists ::env(CI_REPO_ROOT)]} {
+    lappend candidates [file normalize $::env(CI_REPO_ROOT)]
+  }
+
+  # Deduplicate
+  set uniq {}
+  foreach c $candidates {
+    if {[lsearch -exact $uniq $c] < 0} { lappend uniq $c }
+  }
+  set candidates $uniq
+
+  # 1) Direct hits
+  foreach root $candidates {
+    if {[file exists [file join $root $want_rel]]} {
+      return $root
+    }
+  }
+
+  # 2) One-level-deep search (common when cwd is e.g. C:/home/workspace but repo is C:/home/workspace/<id>/...)
+  foreach parent $candidates {
+    foreach sub [glob -nocomplain -types d [file join $parent "*"]] {
+      if {[file exists [file join $sub $want_rel]]} {
+        return [file normalize $sub]
+      }
+    }
+  }
+
+  return ""
+}
+
+set _ci_repo_root [_ci_find_repo_root]
+if {$_ci_repo_root eq ""} {
+  puts "ERROR: could not locate repo root (expected: output/playwright/chatgpt_botprompts/models/ci_showhide.tcl)."
+  puts "Tip: set env var CI_REPO_ROOT to your repo root (e.g. C:/home/workspace/8196399)."
+  return
+}
+
 set _ci_models_dir [file join $_ci_repo_root "output" "playwright" "chatgpt_botprompts" "models"]
 source [file join $_ci_models_dir "ci_showhide.tcl"]
 unset _ci_models_dir
