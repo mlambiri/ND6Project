@@ -126,9 +126,9 @@ proc _ci_force_display_prefs {} {
   axes location lowerleft
   display depthcue off
   catch {display backgroundgradient off}
-  color Display Background white
-  catch {color Display BackgroundTop white}
-  catch {color Display BackgroundBottom white}
+  color Display Background black
+  catch {color Display BackgroundTop black}
+  catch {color Display BackgroundBottom black}
 }
 
 proc main {} {
