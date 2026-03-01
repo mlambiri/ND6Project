@@ -1,5 +1,7 @@
 # Q-site ROS workflow (why MD engines aren’t enough + what to do instead)
 
+ref: https://pmc.ncbi.nlm.nih.gov/articles/PMC7613608/
+
 That “important: none…” means:
 
 Classical MD engines (OpenMM/GROMACS/NAMD) use **molecular mechanics force fields**: fixed bonds (or harmonic bonds), fixed atom types, and usually fixed partial charges. They do **not** have electrons, so they cannot natively model:
