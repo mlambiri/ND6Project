@@ -1,6 +1,26 @@
 # Q-site ROS workflow (why MD engines aren’t enough + what to do instead)
 
 ref: https://pmc.ncbi.nlm.nih.gov/articles/PMC7613608/
+Dictionary:
+WT: Wild type (the “normal”/reference sequence)
+ND6 / M64V: Mitochondrial Complex I subunit ND6; mutation Met64→Val at residue 64
+FMN: Flavin mononucleotide (the flavin cofactor at the N‑module; can be a ROS source)
+Q / 8Q1: (Ubi)quinone cofactor/site; 8Q1 is a quinone-like ligand/resname in your PDB exports
+ET: Electron transfer
+p: Proton (I used it in “e−/p” shorthand)
+PDB: Protein Data Bank file format (coordinates file, *.pdb)
+MD: Molecular dynamics (classical atomistic simulation)
+ns / µs: Nanoseconds / microseconds (simulation time units)
+H: Hydrogen atoms (often added for simulation even if missing from experimental structures)
+O2: Molecular oxygen
+O2•−: Superoxide radical anion (a primary ROS species)
+QM: Quantum mechanics (electronic-structure calculations)
+MM: Molecular mechanics (classical force-field description)
+QM/MM: Hybrid simulation where a small reactive region is QM and the rest is MM
+Marcus (as in “Marcus-type rates”): Marcus theory of electron transfer (rate model using reorganization energy/coupling)
+HPC: High-performance computing (clusters/GPUs used to run big simulations)
+
+
 
 That “important: none…” means:
 
